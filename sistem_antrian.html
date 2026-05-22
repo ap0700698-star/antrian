@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Antrian QR & Cetak PDF</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background-color: #f0f4f8;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .app-container {
+            width: 100%;
+            max-width: 450px;
+            background: white;
+            padding: 25px;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 22px;
+            color: #1e3a8a;
+            margin: 0 0 5px 0;
+        }
+        .header p {
+            font-size: 13px;
+            color: #64748b;
+            margin: 0 0 20px 0;
+        }
+        .qr-section {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 12px;
+            display: inline-block;
+            margin-bottom: 20px;
+            border: 1px solid #e2e8f0;
+        }
+        #qrcode {
+            display: flex;
+            justify-content: center;
+            margin: 10px 0;
+        }
+        .ticket-card {
+            border: 2px dashed #cbd5e1;
+            background: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            position: relative;
+        }
+        .ticket-card::before, .ticket-card::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            width: 20px;
+            height: 20px;
+            background: #f0f4f8;
+            border-radius: 50%;
+        }
+        .ticket-card::before { left: -11px; transform: translateY(-50%); }
+        .ticket-card::after { right: -11px; transform: translateY(-50%); }
+        
+        .queue-num {
+            font-size: 56px;
+            font-weight: 800;
+            color: #2563eb;
+            margin: 10px 0;
+            letter-spacing: 1px;
+        }
+        .date-str {
+            font-size: 12px;
+            color: #94a3b8;
+            text-transform: uppercase;
+        }
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 14px;
+            font-size: 15px;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-bottom: 10px;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+        }
+        .btn-primary:hover { background: #1d4ed8; }
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+        .btn-danger:hover { background: #dc2626; }
+        
+        .footer-note {
+            font-size: 11px;
+            color: #94a3b8;
+            margin-top: 15px;
+            line-height: 1.4;
+        }
+    </style>
+    <!-- Library QR Code Generator & HTML to PDF Converter -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body>
+
+    <div class="app-container">
+        <div class="header">
+            <h1>Sistem Antrian Mandiri</h1>
+            <p>Scan barcode di bawah untuk simulasi akses dari HP</p>
+        </div>
+
+        <div class="qr-section">
+            <div id="qrcode"></div>
+            <div style="font-size: 11px; color: #64748b; margin-top: 5px;">QR-Code Pintu Masuk</div>
+        </div>
+
+        <div class="ticket-card" id="ticket-to-print">
+            <div class="date-str" id="current-date">-- Hari, Tanggal --</div>
+            <div style="font-size: 14px; color: #475569; font-weight: 600; margin-top: 5px;">NOMOR ANTRIAN</div>
+            <div class="queue-num" id="queue-display">A-001</div>
+            <div style="font-size: 11px; color: #64748b;">Harap tunggu nomor Anda dipanggil</div>
+        </div>
+
+        <button class="btn btn-primary" onclick="ambilAntrian Baru()">Ambil Antrian Berikutnya</button>
+        <button class="btn btn-danger" onclick="unduhPDF()">Simpan ke PDF</button>
+
+        <div class="footer-note">
+            🔄 <b>Sistem Auto-Reset Aktif:</b><br>
+            Antrian otomatis kembali ke <b>A-001</b> setiap hari saat memasuki waktu <b>Subuh (Pukul 04:00 WIB)</b>.
+        </div>
+    </div>
+
+    <script>
+        // Set tujuan URL QR Code (Misal di hosting di server Anda)
+        // Saat discan, user otomatis membuka web antrian ini
+        var currentUrl = window.location.href || "https://antrian-digital-anda.com";
+        new QRCode(document.getElementById("qrcode"), {
+            text: currentUrl,
+            width: 128,
+            height: 128,
+            colorDark : "#1e3a8a",
+            colorLight : "#ffffff",
+            correctLevel : QRCode.CorrectLevel.H
+        });
+
+        // Setup Logika Antrian & Reset Subuh
+        if (!localStorage.getItem('nomor_antrian')) {
+            localStorage.setItem('nomor_antrian', '1');
+            localStorage.setItem('tanggal_reset', new Date().toDateString());
+        }
+
+        function checkSubuhReset() {
+            var sekarang = new Date();
+            var tanggalTerakhirReset = localStorage.getItem('tanggal_reset');
+            var tanggalHariIni = sekarang.toDateString();
+            
+            // JIKA hari berganti DAN jam sekarang sudah >= jam 4 subuh
+            if (tanggalTerakhirReset !== tanggalHariIni && sekarang.getHours() >= 4) {
+                localStorage.setItem('nomor_antrian', '1');
+                localStorage.setItem('tanggal_reset', tanggalHariIni);
+                console.log("Antrian berhasil direset otomatis karena sudah subuh.");
+            }
+        }
+
+        function formatNomer(num) {
+            return 'A-' + String(num).padStart(3, '0');
+        }
+
+        function renderTampilan() {
+            checkSubuhReset();
+            var nomerSekarang = localStorage.getItem('nomor_antrian');
+            document.getElementById('queue-display').innerText = formatNomer(nomerSekarang);
+            
+            var opsiTanggal = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            document.getElementById('current-date').innerText = new Date().toLocaleDateString('id-ID', opsiTanggal);
+        }
+
+        function ambilAntrianBaru() {
+            var nomerLama = parseInt(localStorage.getItem('nomor_antrian'));
+            var nomerBaru = nomerLama + 1;
+            localStorage.setItem('nomor_antrian', nomerBaru);
+            renderTampilan();
+        }
+
+        function unduhPDF() {
+            var elemenTiket = document.getElementById('ticket-to-print');
+            var nomerSekarang = localStorage.getItem('nomor_antrian');
+            
+            var konfigurasi = {
+                margin:       15,
+                filename:     'Tiket_Antrian_' + formatNomer(nomerSekarang) + '.pdf',
+                image:        { type: 'jpeg', quality: 1.0 },
+                html2canvas:  { scale: 3 },
+                jsPDF:        { unit: 'mm', format: 'a6', orientation: 'portrait' }
+            };
+            
+            html2pdf().set(konfigurasi).from(elemenTiket).save();
+        }
+
+        // Jalankan saat pertama kali website dimuat
+        renderTampilan();
+        // Cek berkala tiap 30 detik untuk memastikan auto-reset subuh berjalan tanpa refresh manual
+        setInterval(checkSubuhReset, 30000);
+    </script>
+</body>
+</html>
