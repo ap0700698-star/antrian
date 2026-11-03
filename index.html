@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#173d30">
+  <meta name="description" content="Demo sistem antrian mandiri: ambil nomor, scan QR, dan unduh tiket.">
+  <title>Sistem Antrian Mandiri</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" defer></script>
+  <style>
+    :root{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:#192721;background:#f3f5f2;font-synthesis:none;text-rendering:optimizeLegibility}*{box-sizing:border-box}body{min-height:100vh;margin:0;padding:36px 16px;display:grid;place-items:center}.app{width:min(100%,480px);padding:30px;border:1px solid #e3e8e2;border-radius:24px;background:#fff;box-shadow:0 20px 60px #17231d12}.eyebrow{margin:0 0 7px;color:#245c43;font-size:.73rem;font-weight:800;letter-spacing:.12em;text-align:center;text-transform:uppercase}h1{margin:0;text-align:center;font-size:clamp(1.65rem,6vw,2rem);letter-spacing:-.05em}.intro{margin:8px 0 22px;color:#69756d;text-align:center;font-size:.9rem}.qr{width:176px;min-height:176px;margin:0 auto 21px;display:grid;place-items:center;padding:12px;border:1px solid #e2e8e0;border-radius:17px;background:#f8faf7}.qr p{margin:0;color:#69756d;font-size:.76rem;text-align:center}.qr canvas,.qr img{max-width:100%;height:auto}.qr-caption{margin:-14px 0 21px;color:#69756d;font-size:.76rem;text-align:center}.ticket{position:relative;margin:0 0 18px;padding:22px;border:2px dashed #cbd8ce;border-radius:15px;text-align:center}.ticket:before,.ticket:after{position:absolute;top:50%;width:18px;height:18px;border-radius:50%;background:#f3f5f2;content:""}.ticket:before{left:-10px}.ticket:after{right:-10px}.date{color:#77827a;font-size:.76rem}.ticket-label{margin-top:7px;color:#536258;font-size:.77rem;font-weight:750;letter-spacing:.1em}.number{margin:0;color:#245c43;font-size:clamp(3.2rem,14vw,4.2rem);font-weight:850;line-height:1.15;letter-spacing:-.05em}.hint{margin:5px 0 0;color:#69756d;font-size:.78rem}.actions{display:grid;gap:10px}.button{min-height:49px;padding:12px 16px;border:0;border-radius:12px;background:#245c43;color:white;font:inherit;font-weight:750;cursor:pointer;transition:background .16s,transform .16s}.button:hover{transform:translateY(-1px);background:#193f30}.button.secondary{border:1px solid #dfe6de;background:white;color:#245c43}.button.secondary:hover{background:#f2f6f1}.notice{margin:18px 0 0;padding:12px;border-radius:12px;background:#f0f5eb;color:#51614f;font-size:.74rem;line-height:1.5;text-align:center}.notice strong{color:#245c43}.footnote{margin:12px 0 0;color:#89928b;font-size:.68rem;text-align:center}@media(max-width:420px){body{padding:18px 12px}.app{padding:23px 18px}.qr{width:160px;min-height:160px}}
+  </style>
+</head>
+<body>
+  <main class="app">
+    <p class="eyebrow">Demo aplikasi</p>
+    <h1>Sistem Antrian Mandiri</h1>
+    <p class="intro">Ambil nomor antrian dan simpan tiket digital Anda.</p>
+    <div class="qr" id="qrcode" role="img" aria-label="Kode QR untuk membuka website antrian"><p id="qr-status">Memuat kode QR…</p></div>
+    <p class="qr-caption">Pindai kode QR untuk membuka website ini</p>
+    <section class="ticket" id="ticket-to-print" aria-live="polite">
+      <div class="date" id="current-date"></div>
+      <div class="ticket-label">NOMOR ANTRIAN</div>
+      <div class="number" id="queue-display">A-001</div>
+      <p class="hint">Harap tunggu nomor Anda dipanggil</p>
+    </section>
+    <div class="actions">
+      <button class="button" id="next-ticket" type="button">Ambil Antrian Berikutnya</button>
+      <button class="button secondary" id="download-ticket" type="button">Simpan Tiket ke PDF</button>
+    </div>
+    <div class="notice"><strong>Reset harian otomatis.</strong> Nomor kembali ke A-001 setiap pukul 04.00 WIB. Demo ini menyimpan nomor pada browser/perangkat ini.</div>
+    <p class="footnote">Contoh aplikasi untuk demonstrasi portofolio.</p>
+  </main>
+  <script>
+    (() => {
+      const counterKey = 'antrian-demo-nomor';
+      const dayKey = 'antrian-demo-hari';
+      const dateElement = document.getElementById('current-date');
+      const queueElement = document.getElementById('queue-display');
+
+      function getServiceDay() {
+        const parts = new Intl.DateTimeFormat('en', {
+          timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23'
+        }).formatToParts(new Date()).reduce((result, part) => {
+          result[part.type] = part.value;
+          return result;
+        }, {});
+        const cutoffDay = Number(parts.day) - (Number(parts.hour) < 4 ? 1 : 0);
+        return new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, cutoffDay)).toISOString().slice(0, 10);
+      }
+
+      function refreshTicket() {
+        const today = getServiceDay();
+        if (localStorage.getItem(dayKey) !== today) {
+          localStorage.setItem(dayKey, today);
+          localStorage.setItem(counterKey, '1');
+        }
+        const number = Number.parseInt(localStorage.getItem(counterKey) || '1', 10);
+        queueElement.textContent = `A-${String(number).padStart(3, '0')}`;
+        dateElement.textContent = new Intl.DateTimeFormat('id-ID', {
+          timeZone: 'Asia/Jakarta', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+        }).format(new Date());
+      }
+
+      document.getElementById('next-ticket').addEventListener('click', () => {
+        refreshTicket();
+        const nextNumber = Number.parseInt(localStorage.getItem(counterKey) || '1', 10) + 1;
+        localStorage.setItem(counterKey, String(nextNumber));
+        refreshTicket();
+      });
+
+      document.getElementById('download-ticket').addEventListener('click', () => {
+        if (typeof html2pdf !== 'function') {
+          window.alert('Fitur PDF belum tersedia. Periksa koneksi internet, lalu coba lagi.');
+          return;
+        }
+        const number = localStorage.getItem(counterKey) || '1';
+        html2pdf().set({
+          margin: 12,
+          filename: `Tiket_Antrian_A-${String(number).padStart(3, '0')}.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2 },
+          jsPDF: { unit: 'mm', format: 'a6', orientation: 'portrait' }
+        }).from(document.getElementById('ticket-to-print')).save();
+      });
+
+      const qrStatus = document.getElementById('qr-status');
+      if (typeof QRCode === 'function') {
+        qrStatus.remove();
+        new QRCode(document.getElementById('qrcode'), {
+          text: window.location.href,
+          width: 144,
+          height: 144,
+          colorDark: '#193f30',
+          colorLight: '#f8faf7',
+          correctLevel: QRCode.CorrectLevel.H
+        });
+      } else {
+        qrStatus.textContent = 'Kode QR perlu koneksi internet. Buka tautan website ini langsung.';
+      }
+
+      refreshTicket();
+      window.setInterval(refreshTicket, 30000);
+    })();
+  </script>
+</body>
+</html>
